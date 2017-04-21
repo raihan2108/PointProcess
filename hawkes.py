@@ -53,7 +53,7 @@ class UniVariateHawkes(object):
                                           scale=-1 * beta.T) - 1, axis=1)
 
         part3 = (alpha_0 / beta).T * part3[:, np.newaxis]
-        return np.asscalar(part1 - part2 + part3)
+        return np.sum(part1 - part2 + part3)
 
     def simulate_ogataThinning(self, lambda_0=None, alpha_0=None,
                                beta=None, maxPoints=None):
@@ -133,21 +133,27 @@ class UniVariateHawkes(object):
 
         return [compensator(t) for t in timePoints]
 
-    def fit(self, init_params, data):
-        bounds = [(0, None), (0, None), (0, None)]
+    def fit(self, init_params, data, method='Nelder-Mead'):
+        bounds = ((0, None),)*(data.shape[0]*len(init_params))
         mu, alpha, beta = init_params
 
         constraint1 = [{"type": "ineq", "fun": lambda x: x[2] - x[1]}]
 
         def cost_func(params, data):
-            mu, alpha, beta = params
+            try:
+                mu, alpha, beta = params
+            except:
+                mu, alpha, beta = np.hsplit(params.reshape((data.shape[0],3)), 3)
+                mu = mu.T
+                alpha = alpha.T
+                beta = beta.T
             return (-self.loglikelihood(eventHistory=data,
                                         lambda_0=mu, alpha_0=alpha,
                                         beta=beta)
-                    + mu ** 2 + alpha ** 2 + beta ** 2)
+                    + (mu ** 2 + alpha ** 2 + beta ** 2).sum())
 
         return minimize(cost_func, (mu, alpha, beta), args=(data,), bounds=bounds,
-                        constraints=constraint1)
+                        constraints=constraint1, method=method)
 
 
 class MultiVariateHawkes(object):
