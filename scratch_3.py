@@ -83,17 +83,19 @@ def train(events,optim,costfunc,alpha,beta,mu,_niters,temp_diff_tvar,mask_tdiff_
     return _cost,_alphas,_betas,_mus
             
 def plot_cost(_cost,filename):
-    plt.plot(_cost)
-    plt.title("Cost")
-    plt.savefig(filename,dpi=300)
+    fig,ax=plt.subplots(1,1,figsize=(15,6))
+    ax.plot(_cost)
+    ax.set_title("Cost")
+    fig.savefig(filename,dpi=300)
 
 def plot_params(_alphas,_betas,_mus,filename):
-    plt.plot([val[0][0] for val in _alphas])
-    plt.plot([val[0][0] for val in _betas])
-    plt.plot([val[0][0] for val in _mus])
-    plt.title("Alphas, Betas & Mus")
-    plt.legend(["alpha","beta","mu"])
-    plt.savefig(filename,dpi=300)
+    fig,ax=plt.subplots(1,1,figsize=(15,6))
+    ax.plot([val[0][0] for val in _alphas])
+    ax.plot([val[0][0] for val in _betas])
+    ax.plot([val[0][0] for val in _mus])
+    ax.set_title("Alphas, Betas & Mus")
+    ax.legend(["alpha","beta","mu"])
+    fig.savefig(filename,dpi=300)
     
 def main(inputfile,conv=0.4,learning_rate=0.000001,niters=2000,costfilename="cost.pdf",paramsfilename="params.pdf"):
     events,empirical_counts=read_data(inputfile)
