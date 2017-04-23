@@ -1,6 +1,7 @@
 
 # coding: utf-8
 import pandas as pd
+import pickle
 import gzip
 import numpy as np
 from scipy.optimize import minimize
@@ -8,7 +9,7 @@ from datetime import timedelta
 import tensorflow as tf
 from datetime import timedelta
 from scipy.sparse import csr_matrix
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import sys
 
 def read_data(inputfile,_e=1.667e-6):
@@ -81,12 +82,12 @@ def train(events,optim,costfunc,alpha,beta,mu,_niters,temp_diff_tvar,mask_tdiff_
 
     return _cost,_alphas,_betas,_mus
             
-def plot_cost(filename):
+def plot_cost(_cost,filename):
     plt.plot(_cost)
     plt.title("Cost")
     plt.savefig(filename,dpi=300)
 
-def plot_params(filename):
+def plot_params(_alphas,_betas,_mus,filename):
     plt.plot([val[0][0] for val in _alphas])
     plt.plot([val[0][0] for val in _betas])
     plt.plot([val[0][0] for val in _mus])
@@ -94,7 +95,7 @@ def plot_params(filename):
     plt.legend(["alpha","beta","mu"])
     plt.savefig(filename,dpi=300)
     
-def main(inputfile,conv=0.4,learning_rate=0.000001,niters=2000,costfilename="cost.txt",paramsfilename="params.txt"):
+def main(inputfile,conv=0.4,learning_rate=0.000001,niters=2000,costfilename="cost.pdf",paramsfilename="params.pdf"):
     events,empirical_counts=read_data(inputfile)
     mask = np.ones_like(events)
     mask_tdiff, temporal_diff = calc_temporal_differences(events, mask)
@@ -115,15 +116,16 @@ def main(inputfile,conv=0.4,learning_rate=0.000001,niters=2000,costfilename="cos
     optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(costfunc)
     _c,_al,_bt,_mu=train(events,optimizer,costfunc,alpha,beta,mu,niters,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar,mask,temporal_diff,mask_tdiff)
 
-    with open(costfilename) as f:
-	json.dump(f,_c)
+    _out={'cost':_c,'alphas':_al,'betas':_bt,'mus':_mu}
+    #with open(costfilename,"wb") as f:
+    #    pickle.dump(_out,f)
 
     #Plot
-    #plot_cost(costfilename)
-    #plot_params(paramsfilename)
+    plot_cost(_c,costfilename)
+    plot_params(_al,_bt,_mu,paramsfilename)
 
 if __name__=="__main__":
     #inputfile="/home/sathappan/workspace/time2event/hawkes/data/all_trades.csv"
     #inputfile="/Users/nikhil/phd/urban_computing/wmata/repos/PointProcess/data/all_trades.csv"
     inputfile="data/all_trades.csv"
-    main(inputfile,niters=1000)
+    main(inputfile,niters=50)
