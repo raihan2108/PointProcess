@@ -1,6 +1,5 @@
 
 # coding: utf-8
-
 import pandas as pd
 import gzip
 import numpy as np
@@ -9,7 +8,7 @@ from datetime import timedelta
 import tensorflow as tf
 from datetime import timedelta
 from scipy.sparse import csr_matrix
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import sys
 
 def read_data(inputfile,_e=1.667e-6):
@@ -46,7 +45,7 @@ def calc_temporal_differences(arrivals, mask):
     
     return mask_tempdiff, temporal_diff
 
-def loglikelihood():
+def loglikelihood(alpha,beta,mu,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar):
     
     hist_effects = tf.reduce_sum((tf.exp(-beta[:, :, None] * temp_diff_tvar))                                 *mask_tdiff_tvar, axis=2)
     part1 = tf.reduce_sum(tf.log(mu + alpha * hist_effects), axis=1)
@@ -57,12 +56,12 @@ def loglikelihood():
     part3 = (alpha / beta)* p3_tmp[:, None]    
     return tf.reduce_sum(part1 - part2 + part3)
 
-def cost_func(_conv):
-    nloglik = -loglikelihood()
+def cost_func(_conv,alpha,beta,mu,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar):
+    nloglik = -loglikelihood(alpha,beta,mu,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar)
     regularizer = tf.reduce_sum(alpha)+tf.reduce_sum(mu)+tf.reduce_sum(beta) +    tf.reduce_sum(tf.square(alpha))+tf.reduce_sum(tf.square(beta))+tf.reduce_sum(tf.square(mu))#-tf.reduce_sum(tf.abs(alpha))-tf.reduce_sum(tf.abs(beta))
     return (1-_conv)*regularizer + (_conv)*nloglik
 
-def train(optim,costfunc,alpha,beta,mu,_niters):
+def train(events,optim,costfunc,alpha,beta,mu,_niters,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar,mask,temporal_diff,mask_tdiff):
     init = tf.global_variables_initializer()
     with tf.Session() as sess:
         sess.run(init)
@@ -71,8 +70,8 @@ def train(optim,costfunc,alpha,beta,mu,_niters):
         _betas=list()
         _mus=list()
         print("Initial Vals","alpha",alpha.eval(),"beta",beta.eval())
-        for i in range(niters):
-            op,c,al,bt,m=(sess.run([optim,constfunc,alpha,beta,mu],feed_dict={arrivals_tvar: np.nan_to_num(events),                                   mask_tvar:mask, temp_diff_tvar: temporal_diff,                                   mask_tdiff_tvar:mask_tdiff}))
+        for i in range(_niters):
+            op,c,al,bt,m=(sess.run([optim,costfunc,alpha,beta,mu],feed_dict={arrivals_tvar: np.nan_to_num(events),                                   mask_tvar:mask, temp_diff_tvar: temporal_diff,                                   mask_tdiff_tvar:mask_tdiff}))
             if not (i%50):
                 print("Iter ",i,"cost",c,"al",al,"bt",bt,"m",m)
             _cost.append(c)
@@ -95,7 +94,7 @@ def plot_params(filename):
     plt.legend(["alpha","beta","mu"])
     plt.savefig(filename,dpi=300)
     
-def main(inputfile,conv=0.4,learning_rate=0.000001,niters=2000,costfilename="cost.pdf",paramsfilename="params.pdf"):
+def main(inputfile,conv=0.4,learning_rate=0.000001,niters=2000,costfilename="cost.txt",paramsfilename="params.txt"):
     events,empirical_counts=read_data(inputfile)
     mask = np.ones_like(events)
     mask_tdiff, temporal_diff = calc_temporal_differences(events, mask)
@@ -112,15 +111,19 @@ def main(inputfile,conv=0.4,learning_rate=0.000001,niters=2000,costfilename="cos
     mask_tdiff_tvar = tf.placeholder(tf.float64, [None, T_max, T_max])
     
     #Evaluation.
-    costfunc = cost_func(_conv=conv)
+    costfunc = cost_func(conv,alpha,beta,mu,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(costfunc)
-    _c,_al,_bt,_mu=train(optimizer,costfunc,alpha,beta,mu,_niters=niters)
-    
+    _c,_al,_bt,_mu=train(events,optimizer,costfunc,alpha,beta,mu,niters,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar,mask,temporal_diff,mask_tdiff)
+
+    with open(costfilename) as f:
+	json.dump(f,_c)
+
     #Plot
-    plot_cost(costfilename)
-    plot_params(paramsfilename)
+    #plot_cost(costfilename)
+    #plot_params(paramsfilename)
 
 if __name__=="__main__":
     #inputfile="/home/sathappan/workspace/time2event/hawkes/data/all_trades.csv"
-    inputfile="/Users/nikhil/phd/urban_computing/wmata/repos/PointProcess/data/all_trades.csv"
-    main(inputfile)
+    #inputfile="/Users/nikhil/phd/urban_computing/wmata/repos/PointProcess/data/all_trades.csv"
+    inputfile="data/all_trades.csv"
+    main(inputfile,niters=1000)
