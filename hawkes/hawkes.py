@@ -14,7 +14,7 @@ __version__ = "0.0.1"
 
 import numpy as np
 from numpy.random import exponential as exponential_rng
-from .commons import exponential_kernel, convert_to_numpy
+from commons.commons import exponential_kernel, convert_to_numpy
 from scipy.optimize import minimize
 
 
@@ -80,7 +80,8 @@ class UniVariateHawkes(object):
             m = self.get_intensity_upperBound(lambda_0, alpha_0, beta,
                                               t + epsilon, events[:, :enum])
             t += -np.log(np.random.random_sample()) / m
-            u = np.random.random_sample() * m
+            #u = np.random.random_sample() * m
+            u = np.random.uniform(0,m) 
             if t < T and u <= self.get_intensity_upperBound(lambda_0, alpha_0,
                                                             beta, t, events[:, :enum]):
                 events[:, enum] = t
