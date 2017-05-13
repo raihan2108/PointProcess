@@ -55,8 +55,39 @@ class UniVariateHawkes(object):
         part3 = (alpha_0 / beta).T * part3[:, np.newaxis]
         return np.sum(part1 - part2 + part3)
 
+
+    def simulate_next_point_ogataThinning(self,events,lambda_0=None,alpha_0=None,beta=None,_t=None,_T=None):
+        assert all([lambda_0, alpha_0, beta]), """lambda_0 alpha_0 and scale"""
+
+        lambda_0, alpha_0, beta = convert_to_numpy(lambda_0, alpha_0, beta)
+
+        T = _T # ~ 0.135
+        #print("T",T)
+        t = _t
+        #print("t",t)
+        #events = np.zeros((lambda_0.shape[1], maxPoints))
+        epsilon = 1e-4
+        #print("t+eps",t+epsilon)
+        enum = 0
+        m = self.get_intensity_upperBound(lambda_0, alpha_0, beta,
+                                          t + epsilon, events)
+        m_curr=self.get_intensity_upperBound(lambda_0, alpha_0,
+                                                        beta, t, events)
+        #print("Intensity Upper Bound =",m,"intensity_current",m_curr)
+        #t  += np.random.exponential(m)
+        t += -np.log(np.random.random_sample()) / m
+        #print("t = ",t)
+        #u = np.random.random_sample() * m
+        u = np.random.uniform(0,m)
+        #print("u",u,"m_curr",m_curr,"t",t,"T",T)
+        if t < T and u <= m_curr:
+            return True,t
+        else:
+            return False,t
+
+
     def simulate_ogataThinning(self, lambda_0=None, alpha_0=None,
-                               beta=None, maxPoints=None):
+                               beta=None, maxPoints=None,_T=500.0):
         """
         Simulate hawkes process using the Modified Ogatta thinning process
         Reference:  Hawkes Process, P.J Laub et.al., 2015
@@ -71,7 +102,7 @@ class UniVariateHawkes(object):
 
         lambda_0, alpha_0, beta = convert_to_numpy(lambda_0, alpha_0, beta)
 
-        T = 500.0
+        T = _T
         t = 0
         events = np.zeros((lambda_0.shape[1], maxPoints))
         epsilon = 1e-6
