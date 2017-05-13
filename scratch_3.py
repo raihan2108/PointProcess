@@ -130,4 +130,4 @@ if __name__=="__main__":
     #inputfile="/home/sathappan/workspace/time2event/hawkes/data/all_trades.csv"
     #inputfile="/Users/nikhil/phd/urban_computing/wmata/repos/PointProcess/data/all_trades.csv"
     inputfile="data/all_trades.csv"
-    main(inputfile,niters=50)
+    main(inputfile,niters=100)
