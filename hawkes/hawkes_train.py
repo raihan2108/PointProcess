@@ -51,7 +51,6 @@ def read_data_wmata(inputfile,scaletimeunit='D',precision=4,_e=1.667e-6,num_user
         user_ids= list()
         empirical_counts=list()
         for idx,line in enumerate(f):
-
             _user_events=list()
             _tmp=json.loads(line.decode('utf-8'))
             _user_events=pd.Series(sorted([parse(_dt) for _dt in _tmp['arrivalTimes']]))
