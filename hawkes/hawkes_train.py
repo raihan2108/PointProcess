@@ -167,6 +167,7 @@ def mainfunc(inputfile,conv=0.4,learning_rate=0.000000000001,niters=2000,_user_b
     total_users=len(user_data)
     print("\n\nTotal users\n\n",total_users)
     modelparamsfile=os.path.basename(inputfile).split('.')[0]+'_modelparams.pkl'
+    print("Model Params File",modelparamsfile)
     ctr=0
     modelparamsoutput=list()
     print("Counter",ctr,"total_users",total_users)
@@ -196,8 +197,8 @@ def mainfunc(inputfile,conv=0.4,learning_rate=0.000000000001,niters=2000,_user_b
 
         _out={'cost':_c,'alphas':np.hstack(_al),'betas':np.hstack(_bt),'mus':np.hstack(_mu),'events_train':events_train,'events_test':events_test,'empirical_counts':empirical_counts,'user_ids':user_ids,'mask_train':mask_train,'mask_test':mask_test,'args':{'conv':conv,'test_percentage':test_percentage,'num_users':num_users}}
         modelparamsoutput.append(_out)
-
-    with open(modelparamsfile+'/'+modelparamsfile,"wb") as f:
+    print("Dumping")
+    with open(modelparams_dir+'/'+modelparamsfile,"wb") as f:
         pickle.dump(modelparamsoutput,f)
 
 if __name__=="__main__":
