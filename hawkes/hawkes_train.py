@@ -1,8 +1,8 @@
-
 # coding: utf-8
 import pandas as pd
 import pickle
 import gzip
+import multiprocessing
 import numpy as np
 from scipy.optimize import minimize
 from datetime import timedelta
@@ -11,69 +11,53 @@ from datetime import timedelta
 from scipy.sparse import csr_matrix
 import matplotlib.pyplot as plt
 import sys
+import os
 import json
 from dateutil.parser import parse
 
-# def read_data_wmata(inputfile,scaletimeunit='D',precision=4,_e=1.667e-6,num_users=10):
-#     with gzip.open(inputfile) as f:
-#         cnt = 0
-#         user_events = list()
-#         user_ids= list()
-#         empirical_counts=list()
-#         for idx,line in enumerate(f):
-#             if idx >= num_users:
-#                 break
+def _read_data_helper(inputfile):
+    users=list()
+    print("\n\nRead Data Helper\n\n",inputfile)
+    with gzip.open(inputfile,'rb') as f:
+        for line in f:
+            users.append(json.loads(line.decode('utf-8')))
+    print("\n\nlength users\n\n",len(users))
+    return users
 
-#             _user_events=list()
-#             _tmp=json.loads(line.decode('utf-8'))
-#             _user_events=pd.Series(sorted([parse(_dt) for _dt in _tmp['arrivalTimes']]))
-#             user_ids.append(_tmp['_id'])
-#             _user_events=((_user_events - _user_events[0]).apply(lambda x:
-#                         round(x/np.timedelta64(1, scaletimeunit),precision))
-#                           .value_counts().sort_index())
-#             _user_events=_perturb(_user_events)
-#             user_events.append(_user_events)
-#             empirical=pd.Series(sorted([parse(_dt) for _dt in _tmp['arrivalTimes']]))
-#             empirical_counts.append(empirical.value_counts().resample(rule=scaletimeunit).sum())
-            
-#     user_events=pd.DataFrame(user_events)
-#     mask = np.nan_to_num(~(user_events.isnull()).as_matrix())
-
-#     return np.nan_to_num(user_events.as_matrix()),empirical_counts,mask,user_ids
-
-
-
-def read_data_wmata(inputfile,scaletimeunit='D',precision=4,_e=1.667e-6,num_users=10,test_percentage=0.2):
-    with gzip.open(inputfile) as f:
-        cnt = 0
-        user_events_train = list()
-        user_events_test=list()
-        user_ids= list()
-        empirical_counts=list()
-        for idx,line in enumerate(f):
+def read_data_wmata(users_data,scaletimeunit='D',precision=4,_e=1.667e-6,test_percentage=0.2):
+    cnt = 0
+    user_events_train = list()
+    user_events_test=list()
+    user_ids= list()
+    empirical_counts=list()
+    for idx,user in enumerate(users_data):
+        try:
             _user_events=list()
-            _tmp=json.loads(line.decode('utf-8'))
-            _user_events=pd.Series(sorted([parse(_dt) for _dt in _tmp['arrivalTimes']]))
-            user_ids.append(_tmp['_id'])
-            _user_events=((_user_events - _user_events[0]).apply(lambda x:
-                        round(x/np.timedelta64(1, scaletimeunit),precision))
-                          .value_counts().sort_index())
+            _user_events=pd.Series(sorted([parse(_dt) for _dt in user['arrivalTimes']]))
+            user_ids.append(user['_id'])
+            _user_events=((_user_events - _user_events.ix[0]).apply(lambda x: round(x/np.timedelta64(1, scaletimeunit),precision)).value_counts().sort_index())
             all_user_events=_perturb(_user_events)
+
+            #Train Test Stuff which we will ignore for now.
             train_end_idx=len(all_user_events) - int(len(all_user_events)*test_percentage)
-            #print(train_end_idx,len(all_user_events))
             test_user_events=all_user_events[train_end_idx+1:]
             train_user_events=all_user_events[:train_end_idx]
             user_events_train.append(train_user_events)
             user_events_test.append(test_user_events)
-            empirical=pd.Series(sorted([parse(_dt) for _dt in _tmp['arrivalTimes']]))
+            empirical=pd.Series(sorted([parse(_dt) for _dt in user['arrivalTimes']]))
             empirical_counts.append(empirical.value_counts().resample(rule=scaletimeunit).sum())
+        except Exception as e:
+            print("Exception",e,"Occurred for user id",user['_id'])
+            continue
 
     user_events_train=pd.DataFrame(user_events_train)
     mask_train = ~(user_events_train.isnull()).as_matrix()
     user_events_test=pd.DataFrame(user_events_test)
     mask_test = ~(user_events_test.isnull()).as_matrix()
 
-    return np.nan_to_num(user_events_train.as_matrix()),np.nan_to_num(user_events_test.as_matrix()),mask_train,mask_test,empirical_counts,user_ids
+    return np.nan_to_num(user_events_train.as_matrix()),\
+    np.nan_to_num(user_events_test.as_matrix()),mask_train,\
+    mask_test,empirical_counts,user_ids
 
 
 def _perturb(event_list,_e=1.667e-4):
@@ -93,7 +77,7 @@ def read_data(inputfile,_e=1.667e-6):
     
     df = pd.read_csv(inputfile)
     df.t = pd.to_datetime(df.t)
-    pp = (df.t - df.t[0]).apply(lambda x: x/np.timedelta64(1, 'm')).value_counts()
+    pp = (df.t - df.t.ix[0]).apply(lambda x: x/np.timedelta64(1, 'm')).value_counts()
     events = []
     e = _e
     for t, cnt in pp.iteritems():
@@ -171,35 +155,65 @@ def plot_params(_alphas,_betas,_mus,filename):
     ax.legend(["alpha","beta","mu"])
     fig.savefig(filename,dpi=300)
     
-def main(inputfile,conv=0.4,learning_rate=0.000000000001,niters=2000,costfilename="cost.pdf",paramsfilename="params.pdf",modelparamsfile="modelparams.pkl",_num_users=100,test_percentage=0.2):
-    events_train,events_test,mask_train,mask_test,empirical_counts,user_ids=read_data_wmata(inputfile,num_users=_num_users,test_percentage=test_percentage)
+def mainfunc(inputfile,conv=0.4,learning_rate=0.000000000001,niters=2000,_user_batch_size=10,test_percentage=0.1):
+    print("\n\nInside Main Function\n\n "+inputfile)
+    print("\n Conv\n",conv)
+    print("\nniters\n",niters)
+    print("\n_user_batch_size\n",_user_batch_size)
+    modelparams_dir=os.path.abspath(os.path.join(inputfile,os.pardir,os.pardir,'modelparams'))
+    print("\n\nModelparams\n\n",modelparams_dir)
+    user_data=_read_data_helper(inputfile)
+    print("\n\n After _read_data_helper\n\n")    
+    total_users=len(user_data)
+    print("\n\nTotal users\n\n",total_users)
+    modelparamsfile=os.path.basename(inputfile).split('.')[0]+'_modelparams.pkl'
+    ctr=0
+    modelparamsoutput=list()
+    print("Counter",ctr,"total_users",total_users)
+    while ctr< total_users:
+        print("Batch ="+str(int(ctr/_user_batch_size)))
+        end_idx=min(ctr+_user_batch_size,total_users)
+        batch_data=user_data[ctr:end_idx]
+        ctr+=_user_batch_size #increment ctr
+        events_train,events_test,mask_train,mask_test,empirical_counts,user_ids=read_data_wmata(batch_data,test_percentage=test_percentage)
+        mask_tdiff_train,temporal_diff_train = calc_temporal_differences(events_train, mask_train)
 
-    #events,empirical_counts=read_data(inputfile)
-    #mask = np.ones_like(events)
-    mask_tdiff_train, temporal_diff_train = calc_temporal_differences(events_train, mask_train)
-    #Init TF vars.
-    num_users =mask_train.shape[0]
-    alpha = tf.Variable(tf.random_uniform([num_users, 1], dtype=tf.float64), name='alpha')
-    beta = tf.Variable(tf.random_uniform([num_users, 1], dtype=tf.float64), name='beta')
-    mu = tf.Variable(tf.random_uniform([num_users, 1], dtype=tf.float64), name='mu')
-    T_max = mask_tdiff_train.shape[1]
-    arrivals_tvar = tf.placeholder(tf.float64, [None, T_max])
-    mask_tvar = tf.placeholder(tf.float64, [None, T_max])
-    temp_diff_tvar = tf.placeholder(tf.float64,[None, T_max, T_max])
-    mask_tdiff_tvar = tf.placeholder(tf.float64, [None, T_max, T_max])
+        #Init TF vars.
+        num_users =mask_train.shape[0]
+        alpha = tf.Variable(tf.random_uniform([num_users, 1], dtype=tf.float64), name='alpha')
+        beta = tf.Variable(tf.random_uniform([num_users, 1], dtype=tf.float64), name='beta')
+        mu = tf.Variable(tf.random_uniform([num_users, 1], dtype=tf.float64), name='mu')
+        T_max = mask_tdiff_train.shape[1]
+        arrivals_tvar = tf.placeholder(tf.float64, [None, T_max])
+        mask_tvar = tf.placeholder(tf.float64, [None, T_max])
+        temp_diff_tvar = tf.placeholder(tf.float64,[None, T_max, T_max])
+        mask_tdiff_tvar = tf.placeholder(tf.float64, [None, T_max, T_max])
 
-    #Evaluation.
-    costfunc = cost_func(conv,alpha,beta,mu,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar)
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(costfunc)
-    _c,_al,_bt,_mu=train(events_train,optimizer,costfunc,alpha,beta,mu,niters,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar,mask_train,temporal_diff_train,mask_tdiff_train)
+        #Evaluation.
+        costfunc = cost_func(conv,alpha,beta,mu,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(costfunc)
+        _c,_al,_bt,_mu=train(events_train,optimizer,costfunc,alpha,beta,mu,niters,temp_diff_tvar,mask_tdiff_tvar,arrivals_tvar,mask_tvar,mask_train,temporal_diff_train,mask_tdiff_train)
 
-    _out={'cost':_c,'alphas':np.hstack(_al),'betas':np.hstack(_bt),'mus':np.hstack(_mu),'events_train':events_train,'events_test':events_test,'empirical_counts':empirical_counts,'user_ids':user_ids,'mask_train':mask_train,'mask_test':mask_test,'args':{'conv':conv,'test_percentage':test_percentage,'num_users':num_users}}
-    #modelparamsfile+="_"+str(niters)+"_"+str(num_users)+".pkl"
-    with open(modelparamsfile,"wb") as f:
-        pickle.dump(_out,f)
+        _out={'cost':_c,'alphas':np.hstack(_al),'betas':np.hstack(_bt),'mus':np.hstack(_mu),'events_train':events_train,'events_test':events_test,'empirical_counts':empirical_counts,'user_ids':user_ids,'mask_train':mask_train,'mask_test':mask_test,'args':{'conv':conv,'test_percentage':test_percentage,'num_users':num_users}}
+        modelparamsoutput.append(_out)
+
+    with open(modelparamsfile+'/'+modelparamsfile,"wb") as f:
+        pickle.dump(modelparamsoutput,f)
 
 if __name__=="__main__":
-    #inputfile="/home/sathappan/workspace/time2event/hawkes/data/all_trades.csv"
-    inputfile="/Users/nikhil/phd/urban_computing/datasets/wmata/wmata_2015_2016/user_timeseries_sorted_100.gz"
-    #inputfile="data/all_trades.csv"
-    main(inputfile,conv=float(sys.argv[1]),niters=int(sys.argv[2]),_num_users=int(sys.argv[3]),test_percentage=float(sys.argv[4]))
+    #inputfile="/Users/nikhil/phd/urban_computing/datasets/wmata/wmata_2015_2016/experiment_input_data/5000_users/user_batches/yearly/input/2016/user_timeseries_sorted_100.gz"
+
+    procs=multiprocessing.Pool(processes=4)
+    inputfiles=sys.argv[1]
+    _conv=float(sys.argv[2])
+    _niters=int(sys.argv[3])
+    _user_batch_size=int(sys.argv[4])
+    _test_percentage=float(sys.argv[5])
+    with open(inputfiles) as f:
+        allinputfiles=f.readlines()
+
+    for item in allinputfiles:
+        procs.apply_async(mainfunc,[os.path.abspath(item.strip()),],{"conv":_conv,"niters":_niters,"_user_batch_size":_user_batch_size,"test_percentage":_test_percentage})
+    procs.close()
+    procs.join()
+    #main(inputfile=os.path.abspath(sys.argv[1]),conv=float(sys.argv[2]),niters=int(sys.argv[3]),_user_batch_size=int(sys.argv[4]),test_percentage=float(sys.argv[5]))
