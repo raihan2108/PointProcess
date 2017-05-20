@@ -203,16 +203,17 @@ def mainfunc(inputfile,conv=0.4,learning_rate=0.000000000001,niters=2000,_user_b
 
 if __name__=="__main__":
     #inputfile="/Users/nikhil/phd/urban_computing/datasets/wmata/wmata_2015_2016/experiment_input_data/5000_users/user_batches/yearly/input/2016/user_timeseries_sorted_100.gz"
-
-    procs=multiprocessing.Pool(processes=4)
-    inputfiles=sys.argv[1]
+    print("Inside main")
+    procs=multiprocessing.Pool(processes=10)
+    inputfiles=str(sys.argv[1])
     _conv=float(sys.argv[2])
     _niters=int(sys.argv[3])
     _user_batch_size=int(sys.argv[4])
     _test_percentage=float(sys.argv[5])
     with open(inputfiles) as f:
-        allinputfiles=f.readlines()
-
+        allinputfiles=list(map(lambda ln: str(ln),f.readlines()))
+    
+    print("Allinputfiles",allinputfiles)
     for item in allinputfiles:
         procs.apply_async(mainfunc,[os.path.abspath(item.strip()),],{"conv":_conv,"niters":_niters,"_user_batch_size":_user_batch_size,"test_percentage":_test_percentage})
     procs.close()
